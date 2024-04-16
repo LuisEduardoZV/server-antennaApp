@@ -1,0 +1,22 @@
+{
+  "name": "server-anthemapp",
+  "version": "1.0.0",
+  "description": "Servidor para la aplicación AnthemApp",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LuisEduardoZV/server-anthemApp.git"
+  },
+  "author": "Luis Eduardo Zúñiga Vera",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/LuisEduardoZV/server-anthemApp/issues"
+  },
+  "homepage": "https://github.com/LuisEduardoZV/server-anthemApp#readme",
+  "dependencies": {
+    "express": "^4.19.2"
+  }
+}
