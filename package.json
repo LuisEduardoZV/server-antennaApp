@@ -32,5 +32,8 @@
 	},
 	"eslintConfig": {
 		"extends": "./node_modules/standard/eslintrc.json"
+	},
+	"engines": {
+		"node": "18.x"
 	}
 }

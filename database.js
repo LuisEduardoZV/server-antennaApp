@@ -18,7 +18,6 @@ const createAdmin = db.prepare(`CREATE TABLE IF NOT EXISTS Admin (
       )`)
 const stmCreateAdmin = db.transaction(() => {
   createAdmin.run()
-  /*
   const firstAdmin = {
     name: 'DEMO',
     email: 'demo@demo.com',
@@ -31,7 +30,7 @@ const stmCreateAdmin = db.transaction(() => {
   const stm = db.transaction(() => {
     sql.run(firstAdmin)
   })
-  stm() */
+  stm()
 })
 stmCreateAdmin()
 
