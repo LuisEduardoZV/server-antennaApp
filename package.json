@@ -1,22 +1,36 @@
 {
-  "name": "server-anthemapp",
-  "version": "1.0.0",
-  "description": "Servidor para la aplicación AnthemApp",
-  "main": "index.js",
-  "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
-  },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/LuisEduardoZV/server-anthemApp.git"
-  },
-  "author": "Luis Eduardo Zúñiga Vera",
-  "license": "ISC",
-  "bugs": {
-    "url": "https://github.com/LuisEduardoZV/server-anthemApp/issues"
-  },
-  "homepage": "https://github.com/LuisEduardoZV/server-anthemApp#readme",
-  "dependencies": {
-    "express": "^4.19.2"
-  }
+	"name": "server-anthemapp",
+	"version": "1.0.0",
+	"description": "Servidor para la aplicación AnthemApp",
+	"main": "index.js",
+	"scripts": {
+		"start": "node index.js",
+		"test": "echo \"Error: no test specified\" && exit 1"
+	},
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/LuisEduardoZV/server-anthemApp.git"
+	},
+	"author": "Luis Eduardo Zúñiga Vera",
+	"license": "ISC",
+	"bugs": {
+		"url": "https://github.com/LuisEduardoZV/server-anthemApp/issues"
+	},
+	"homepage": "https://github.com/LuisEduardoZV/server-anthemApp#readme",
+	"dependencies": {
+		"@faker-js/faker": "^8.4.1",
+		"better-sqlite3": "^9.5.0",
+		"cors": "^2.8.5",
+		"dayjs": "^1.11.10",
+		"express": "^4.19.2",
+		"md5": "^2.3.0",
+		"sqlite3": "^5.1.7"
+	},
+	"devDependencies": {
+		"eslint": "^8.57.0",
+		"standard": "^17.1.0"
+	},
+	"eslintConfig": {
+		"extends": "./node_modules/standard/eslintrc.json"
+	}
 }
