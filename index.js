@@ -15,21 +15,23 @@ app.use(bodyParser.json())
 
 // Server port
 const HTTP_PORT = 8000
-// Start server
-app.listen(HTTP_PORT, () => {
-  console.log('Server running on port %PORT%'.replace('%PORT%', HTTP_PORT))
-})
+
 // Root endpoint
 app.get('/', (req, res, next) => {
   res.json({ message: 'Ok' })
 })
 
+// Start server
+app.listen(HTTP_PORT, () => {
+  console.log('Server running on port %PORT%'.replace('%PORT%', HTTP_PORT))
+})
+
 // ENDPOINTS PARA CLIENTES
 
-app.get('/api/Clientes', (req, res, next) => {
+app.get('/api/Clientes', async (req, res, next) => {
   try {
     const sql = 'SELECT * FROM Clientes'
-    const data = db.prepare(sql).all()
+    const { rows: data } = await db.query(sql)
 
     res.json({
       message: 'success',
@@ -41,7 +43,7 @@ app.get('/api/Clientes', (req, res, next) => {
   }
 })
 
-app.post('/api/Clientes', (req, res, next) => {
+app.post('/api/Clientes', async (req, res, next) => {
   const errors = []
   if (!req.body.name) {
     errors.push('No name specified')
@@ -65,41 +67,25 @@ app.post('/api/Clientes', (req, res, next) => {
     res.status(400).json({ error: errors.join(',') })
     return
   }
-  const dataCli = {
-    id: req.body.id ?? '',
-    phone: req.body.phone ?? '',
-    name: req.body.name ?? '',
-    address: req.body.address ?? '',
-    cliNumber: req.body.cliNumber ?? '',
-    zip: req.body.zip ?? '',
-    email: req.body.email ?? '',
-    rfc: req.body.rfc ?? '',
-    active: req.body.active ?? '',
-    note: req.body.note ?? ''
-  }
+  const { phone, name, address, clinumber, zip, email, rfc, active, note, contacts } = req.body
 
-  const contacts = req.body.contacts ?? []
+  const contactos = contacts ?? []
 
   try {
-    const insertClient = db.prepare('INSERT INTO Clientes (phone,name,address,cliNumber,zip,email,rfc,active,note) VALUES (@phone,@name,@address,@cliNumber,@zip,@email,@rfc,@active,@note) RETURNING id')
+    const sql = 'INSERT INTO Clientes (phone,name,address,clinumber,zip,email,rfc,active,note) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *'
 
-    const stmCli = db.transaction(() => {
-      const { lastInsertRowid } = insertClient.run(dataCli)
-      if (lastInsertRowid) {
-        if (contacts.length) {
-          const insertContacts = db.prepare('INSERT INTO Contactos (clientId,phone,name,position,active,note) VALUES (@clientId,@phone,@name,@position,@active,@note)')
+    const { rows } = await db.query(sql, [phone, name, address, clinumber, zip, email, rfc, active, note ?? ''])
 
-          const stmCon = db.transaction((contacts) => {
-            for (const contact of contacts) insertContacts.run({ ...contact, clientId: lastInsertRowid })
-          })
-          stmCon(contacts)
-        }
+    if (contactos.length && rows && rows[0]?.id) {
+      const sql2 = 'INSERT INTO Contactos (clientid,phone,name,position,active,note) VALUES ($1,$2,$3,$4,$5,$6)'
+
+      for (let i = 0; i < contactos.length; i++) {
+        const { phone: cphone, name: cname, position: cposition, active: cactive, note: cnote } = contactos[i]
+        await db.query(sql2, [rows[0]?.id, cphone, cname, cposition, cactive, cnote])
       }
-    })
-    stmCli()
+    }
 
-    const sql = 'SELECT * FROM Clientes'
-    const data = db.prepare(sql).all()
+    const { rows: data } = await db.query('SELECT * FROM Clientes')
 
     res.json({
       message: 'success',
@@ -111,23 +97,19 @@ app.post('/api/Clientes', (req, res, next) => {
   }
 })
 
-app.get('/api/Clientes/:id', (req, res, next) => {
+app.get('/api/Clientes/:id', async (req, res, next) => {
   try {
-    const params = [req.params.id]
-    const sql = db.prepare('SELECT * FROM Clientes WHERE id = ?').get(params)
+    const { rows } = await db.query('SELECT * FROM Clientes WHERE id = $1', [req.params.id])
 
-    let contactosData = []
-    if (sql) {
-      const contactos = db.prepare('SELECT * FROM Contactos WHERE clientId = ?')
-      const stm = db.transaction(() => {
-        contactosData = contactos.all(params)
-      })
-      stm()
+    let contactos = []
+    if (rows) {
+      const { rows: data } = await db.query('SELECT * FROM Contactos WHERE clientid = $1', [req.params.id])
+      contactos = data
     }
 
     res.json({
       message: 'success',
-      data: { ...sql, contactos: contactosData }
+      data: { ...rows[0], contactos }
     })
   } catch (error) {
     console.log(error)
@@ -135,35 +117,23 @@ app.get('/api/Clientes/:id', (req, res, next) => {
   }
 })
 
-app.put('/api/Clientes/:id', (req, res, next) => {
+app.put('/api/Clientes/:id', async (req, res, next) => {
   try {
-    const dataCli = {
-      id: req.params.id,
-      phone: req.body.phone ?? '',
-      name: req.body.name ?? '',
-      address: req.body.address ?? '',
-      cliNumber: req.body.cliNumber ?? '',
-      zip: req.body.zip ?? '',
-      email: req.body.email ?? '',
-      rfc: req.body.rfc ?? '',
-      active: req.body.active ?? '' + 1,
-      note: req.body.note ?? ''
-    }
-    db.prepare(
-              `UPDATE Clientes set 
-                 phone = COALESCE(@phone,phone), 
-                 name = COALESCE(@name,name), 
-                 address = COALESCE(@address,address), 
-                 cliNumber = COALESCE(@cliNumber,cliNumber), 
-                 zip = COALESCE(@zip,zip), 
-                 email = COALESCE(@email,email), 
-                 rfc = COALESCE(@rfc,rfc), 
-                 active = COALESCE(@active,active), 
-                 note = COALESCE(@note,note) 
-                 WHERE id = @id`).run(dataCli)
+    const { phone, name, address, clinumber, zip, email, rfc, active, note } = req.body
+    const sql = `UPDATE Clientes set
+    phone = $1,
+    name = $2,
+    address = $3,
+    clinumber = $4,
+    zip = $5,
+    email = $6,
+    rfc = $7,
+    active = $8,
+    note = $9
+    WHERE id = $10 RETURNING *`
+    await db.query(sql, [phone, name, address, clinumber, zip, email, rfc, active, note, req.params.id])
 
-    const sql = 'SELECT * FROM Clientes'
-    const data = db.prepare(sql).all()
+    const { rows: data } = await db.query('SELECT * FROM Clientes')
 
     res.json({
       message: 'success',
@@ -175,17 +145,16 @@ app.put('/api/Clientes/:id', (req, res, next) => {
   }
 })
 
-app.delete('/api/Clientes/:id', (req, res, next) => {
+app.delete('/api/Clientes/:id', async (req, res, next) => {
   try {
-    const sql = db.prepare('DELETE FROM Clientes WHERE id = ?')
+    const sql = 'DELETE FROM Clientes WHERE id = $1 RETURNING *'
+    const { rows } = await db.query(sql, [req.params.id])
 
     let data = []
-    const stm = db.transaction(() => {
-      const info = sql.run(req.params.id)
-      console.log(info)
-      data = db.prepare('SELECT * FROM Clientes').all()
-    })
-    stm()
+    if (rows && rows[0]) {
+      const { rows: info } = await db.query('SELECT * FROM Clientes')
+      data = info
+    }
 
     res.json({ message: 'deleted', data })
   } catch (error) {
@@ -195,10 +164,9 @@ app.delete('/api/Clientes/:id', (req, res, next) => {
 
 // ENDPOINTS PARA ADMIN
 
-app.get('/api/Admins', (req, res, next) => {
+app.get('/api/Admins', async (req, res, next) => {
   try {
-    const sql = 'SELECT * FROM Admin'
-    const data = db.prepare(sql).all()
+    const { rows: data } = await db.query('SELECT * FROM Admin')
 
     res.json({
       message: 'success',
@@ -210,14 +178,13 @@ app.get('/api/Admins', (req, res, next) => {
   }
 })
 
-app.get('/api/Admins/:id', (req, res, next) => {
+app.get('/api/Admins/:id', async (req, res, next) => {
   try {
-    const params = [req.params.id]
-    const sql = db.prepare('SELECT * FROM Admin WHERE id = ?').get(params)
+    const { rows: data } = await db.query('SELECT * FROM Admin WHERE id = $1', [req.params.id])
 
     res.json({
       message: 'success',
-      data: sql
+      data
     })
   } catch (error) {
     console.log(error)
@@ -225,7 +192,7 @@ app.get('/api/Admins/:id', (req, res, next) => {
   }
 })
 
-app.post('/api/Admins', (req, res, next) => {
+app.post('/api/Admins', async (req, res, next) => {
   const errors = []
   if (!req.body.password) {
     errors.push('No password specified')
@@ -240,26 +207,19 @@ app.post('/api/Admins', (req, res, next) => {
     res.status(400).json({ error: errors.join(',') })
     return
   }
-  const data = {
-    name: req.body.name,
-    email: req.body.email,
-    password: md5('' + req.body.password),
-    active: '' + 1
-  }
+  const {
+    name,
+    email,
+    password
+  } = req.body
   try {
-    const params = [data.email, data.name, data.password, data.active]
-    const sql = db.prepare('INSERT INTO Admin (email, name, password, active) VALUES (?,?,?,?)')
+    const sql = 'INSERT INTO Admin (email, name, password, active) VALUES ($1,$2,$3,$4) RETURNING *'
 
-    const stm = db.transaction(() => {
-      sql.run(params)
-    })
-    stm()
-
-    console.log(sql)
+    const { rows } = await db.query(sql, [[email, name, md5(password), '' + 1]])
 
     res.json({
       message: 'success',
-      ...data,
+      ...rows[0],
       id: this.lastID
     })
   } catch (error) {
@@ -268,29 +228,28 @@ app.post('/api/Admins', (req, res, next) => {
   }
 })
 
-app.put('/api/Admins/:id', (req, res, next) => {
+app.put('/api/Admins/:id', async (req, res, next) => {
   try {
-    const data = {
-      id: req.params.id,
-      name: req.body.name,
-      email: req.body.email,
-      password: req.body.hasNewPass ? md5(req.body.password) : (req.body.password ?? ''),
-      active: req.body.active ?? '' + 1
-    }
-    const params = [data.email, data.name, data.password, data.active, data.id]
-    const sql = db.prepare(
-            `UPDATE Admin set 
-               email = COALESCE(?,email), 
-               name = COALESCE(?,name), 
-               password = COALESCE(?,password), 
-               active = COALESCE(?,active) 
-               WHERE id = ?`).run(params)
+    const {
+      id,
+      name,
+      email
+    } = req.body
+    const password = req.body.hasNewPass ? md5(req.body.password) : (req.body.password ?? '')
+    const active = req.body.active ?? '' + 1
 
-    console.log(sql)
+    const sql = `UPDATE Admin set
+    email = $1,
+    name = $2,
+    password = $3,
+    active = $4,
+    WHERE id = $5 RETURNING *`
+
+    const { rows: data } = await db.query(sql, [email, name, password, active, id])
 
     res.json({
       message: 'success',
-      ...data
+      ...data[0]
     })
   } catch (error) {
     console.log(error)
@@ -298,12 +257,12 @@ app.put('/api/Admins/:id', (req, res, next) => {
   }
 })
 
-app.delete('/api/Admins/:id', (req, res, next) => {
+app.delete('/api/Admins/:id', async (req, res, next) => {
   try {
-    const sql = db.prepare('DELETE FROM Admin WHERE id = ?')
-    const info = sql.run(req.params.id)
+    const sql = 'DELETE FROM Admin WHERE id = $1 RETURNING *'
+    const { rows } = await db.query(sql, [req.params.id])
 
-    res.json({ message: 'deleted', data: info })
+    res.json({ message: 'deleted', data: rows[0] })
   } catch (error) {
     console.log(error)
     res.status(400).json({ error: error.message })
@@ -312,10 +271,9 @@ app.delete('/api/Admins/:id', (req, res, next) => {
 
 // ENDPOINTS PARA CONTACTOS
 
-app.get('/api/Contactos', (req, res, next) => {
+app.get('/api/Contactos', async (req, res, next) => {
   try {
-    const sql = 'SELECT * FROM Contactos'
-    const data = db.prepare(sql).all()
+    const { rows: data } = await db.query('SELECT * FROM Contactos')
 
     res.json({
       message: 'success',
@@ -327,14 +285,13 @@ app.get('/api/Contactos', (req, res, next) => {
   }
 })
 
-app.get('/api/Contactos/:id', (req, res, next) => {
+app.get('/api/Contactos/:id', async (req, res, next) => {
   try {
-    const params = [req.params.id]
-    const sql = db.prepare('SELECT * FROM Contactos WHERE id = ?').get(params)
+    const { rows: data } = await db.query('SELECT * FROM Contactos WHERE id = $1', [req.params.id])
 
     res.json({
       message: 'success',
-      data: sql
+      data
     })
   } catch (error) {
     console.log(error)
@@ -342,29 +299,28 @@ app.get('/api/Contactos/:id', (req, res, next) => {
   }
 })
 
-app.put('/api/Contactos/:id', (req, res, next) => {
+app.put('/api/Contactos/:id', async (req, res, next) => {
   try {
-    const data = {
-      id: req.params.id,
-      clientId: '' + req.body.clientId,
-      name: req.body.name,
-      phone: req.body.phone,
-      position: req.body.position ?? '',
-      note: req.body.note ?? '',
-      active: req.body.active ?? '' + 1
-    }
+    const {
+      clientid,
+      name,
+      phone
+    } = req.body
 
-    const sql = db.prepare(
-                `UPDATE Contactos set 
-                   clientId = COALESCE(@clientId,clientId), 
-                   name = COALESCE(@name,name), 
-                   phone = COALESCE(@phone,phone), 
-                   position = COALESCE(@position,position), 
-                   note = COALESCE(@note,note), 
-                   active = COALESCE(@active,active)
-                   WHERE id = @id`).run(data)
+    const position = req.body.position ?? ''
+    const note = req.body.note ?? ''
+    const active = req.body.active ?? '' + 1
 
-    console.log(sql)
+    const sql = `UPDATE Contactos set
+    clientid = $1,
+    name = $2,
+    phone = $3,
+    position = $4,
+    note = $5,
+    active = $6
+    WHERE id = $7 RETURNING *`
+
+    const { rows: data } = await db.query(sql, [clientid, name, phone, position, note, active, req.params.id])
 
     res.json({
       message: 'success',
@@ -378,10 +334,9 @@ app.put('/api/Contactos/:id', (req, res, next) => {
 
 // ENDPOINTS PARA USERS
 
-app.get('/api/Users', (req, res, next) => {
+app.get('/api/Users', async (req, res, next) => {
   try {
-    const sql = 'SELECT * FROM Users'
-    const data = db.prepare(sql).all()
+    const { rows: data } = await db.query('SELECT * FROM Users')
 
     res.json({
       message: 'success',
@@ -393,14 +348,13 @@ app.get('/api/Users', (req, res, next) => {
   }
 })
 
-app.get('/api/Users/:id', (req, res, next) => {
+app.get('/api/Users/:id', async (req, res, next) => {
   try {
-    const params = [req.params.id]
-    const sql = db.prepare('SELECT * FROM Users WHERE id = ?').get(params)
+    const { rows: data } = await db.query('SELECT * FROM Users WHERE id = $1', [req.params.id])
 
     res.json({
       message: 'success',
-      data: sql
+      data
     })
   } catch (error) {
     console.log(error)
@@ -408,7 +362,7 @@ app.get('/api/Users/:id', (req, res, next) => {
   }
 })
 
-app.post('/api/Users', (req, res, next) => {
+app.post('/api/Users', async (req, res, next) => {
   const errors = []
   if (!req.body.name) {
     errors.push('No name specified')
@@ -423,22 +377,23 @@ app.post('/api/Users', (req, res, next) => {
     res.status(400).json({ error: errors.join(',') })
     return
   }
-  const data = {
-    clientId: '' + req.body.clientId,
-    email: req.body.email,
-    name: req.body.name,
-    password: md5('' + req.body.password),
-    active: req.body.active ?? '',
-    type: req.body.type ?? '' + 1
-  }
-  try {
-    const sql = db.prepare('INSERT INTO Users (clientId,email,name,password,active,type) VALUES (@clientId,@email,@name,@password,@active,@type)').run(data)
+  const {
+    clientid,
+    email,
+    name
+  } = req.body
 
-    console.log(sql)
+  const password = md5('' + req.body.password)
+  const active = req.body.active ?? ''
+  const type = req.body.type ?? '' + 1
+  try {
+    const sql = 'INSERT INTO Users (clientid,email,name,password,active,type) VALUES ($1,$2,$3,$4,$5,$6) RETURNING *'
+
+    const { rows: data } = await db.query(sql, [clientid, email, name, password, active, type])
 
     res.json({
       message: 'success',
-      ...data,
+      ...data[0],
       id: this.lastID
     })
   } catch (error) {
@@ -448,35 +403,38 @@ app.post('/api/Users', (req, res, next) => {
   }
 })
 
-app.put('/api/Users/:id', (req, res, next) => {
+app.put('/api/Users/:id', async (req, res, next) => {
   try {
-    const data = {
-      id: req.params.id,
-      clientId: '' + req.body.clientId,
-      email: req.body.email,
-      name: req.body.name,
-      password: req.body.hasNewPassword ? md5(req.body.password) : (req.body.lastPassword ?? ''),
-      active: req.body.active ?? 1,
-      type: req.body.type ?? '' + 1
-    }
-    console.log(data)
+    const {
+      clientid,
+      email,
+      name
+    } = req.body
+
+    const password = md5('' + req.body.password)
+    const active = req.body.active ?? ''
+    const type = req.body.type ?? '' + 1
 
     let queryPass = ''
-    if (req.body.hasNewPassword) queryPass = ',password = COALESCE(@password,password)'
+    const params = [clientid, name, active, type, email]
+    if (req.body.hasNewPassword) {
+      queryPass = ',password = $6'
+      params.push(password)
+    }
 
-    const sql = db.prepare(`UPDATE Users set 
-    clientId = COALESCE(@clientId,clientId), 
-    name = COALESCE(@name,name), 
-    active = COALESCE(@active,active), 
-    type = COALESCE(@type,type),
-    email = COALESCE(@email,email)${queryPass}
-    WHERE id = @id`).run(data)
+    const sql = `UPDATE Users set
+    clientid = $1,
+    name = $2,
+    active = $3,
+    type = $4,
+    email = $5${queryPass}
+    WHERE id = ${req.body.hasNewPassword ? '$7' : '$6'} RETURNING *`
 
-    console.log(sql)
+    const { rows: data } = await db.query(sql, params)
 
     res.json({
       message: 'success',
-      ...data
+      ...data[0]
     })
   } catch (error) {
     console.log(error)
@@ -484,12 +442,13 @@ app.put('/api/Users/:id', (req, res, next) => {
   }
 })
 
-app.delete('/api/Users/:id', (req, res, next) => {
+app.delete('/api/Users/:id', async (req, res, next) => {
   try {
-    const sql = db.prepare('DELETE FROM Users WHERE id = ?')
-    const info = sql.run(req.params.id)
+    const sql = 'DELETE FROM Users WHERE id = $1 RETURNING *'
 
-    res.json({ message: 'deleted', data: info })
+    const { rows } = await db.query(sql, [req.params.id])
+
+    res.json({ message: 'deleted', data: rows[0] })
   } catch (error) {
     console.log(error)
     res.status(400).json({ error: error.message })
@@ -498,10 +457,9 @@ app.delete('/api/Users/:id', (req, res, next) => {
 
 // ENDPOINTS PARA TERMINALES
 
-app.get('/api/Terminales', (req, res, next) => {
+app.get('/api/Terminales', async (req, res, next) => {
   try {
-    const sql = 'SELECT * FROM Terminales'
-    const data = db.prepare(sql).all()
+    const { rows: data } = await db.query('SELECT * FROM Terminales')
 
     res.json({
       message: 'success',
@@ -513,14 +471,13 @@ app.get('/api/Terminales', (req, res, next) => {
   }
 })
 
-app.get('/api/Terminales/:id', (req, res, next) => {
+app.get('/api/Terminales/:id', async (req, res, next) => {
   try {
-    const params = [req.params.id]
-    const sql = db.prepare('SELECT * FROM Terminales WHERE id = ?').get(params)
+    const { rows: data } = await db.query('SELECT * FROM Terminales WHERE id = $1', [req.params.id])
 
     res.json({
       message: 'success',
-      data: sql
+      data
     })
   } catch (error) {
     console.log(error)
@@ -528,72 +485,30 @@ app.get('/api/Terminales/:id', (req, res, next) => {
   }
 })
 
-/*
-app.post('/api/Terminal/', (req, res, next) => {
-  const errors = []
-  if (!req.body.name) {
-    errors.push('No name specified')
-  }
-  if (!req.body.email) {
-    errors.push('No email specified')
-  }
-  if (!req.body.password) {
-    errors.push('No password specified')
-  }
-  if (errors.length) {
-    res.status(400).json({ error: errors.join(',') })
-    return
-  }
-  const data = {
-    clientId: '' + req.body.clientId,
-    email: req.body.email,
-    name: req.body.name,
-    password: md5(req.body.password),
-    active: req.body.active ?? '',
-    type: req.body.type ?? '' + 1
-  }
+app.put('/api/Terminales/:id', async (req, res, next) => {
   try {
-    const sql = db.prepare('INSERT INTO Users (clientId,email,name,password,active,type) VALUES (@clientId,@email,@name,@password,@active,@type)').run(data)
+    const {
+      name,
+      lat,
+      lng,
+      alias,
+      variable
+    } = req.body
+    const id = req.params.id
 
-    console.log(sql)
+    const sql = `UPDATE Terminales set
+                       name = $1,
+                       lat = $2,
+                       lng = $3,
+                       alias = $4,
+                       variable = $5
+                       WHERE id = $6 RETURNING *`
+
+    const { rows } = await db.query(sql, [name, lat, lng, alias, variable, id])
 
     res.json({
       message: 'success',
-      ...data,
-      id: this.lastID
-    })
-  } catch (error) {
-    console.log(error)
-    // SQLITE_CONSTRAINT error cuando se repite correo
-    res.status(400).json({ error: error.message })
-  }
-}) */
-
-app.put('/api/Terminales/:id', (req, res, next) => {
-  try {
-    const data = {
-      id: req.params.id,
-      name: req.body.name,
-      lat: req.body.lat,
-      lng: req.body.lng,
-      alias: req.body.alias,
-      variable: req.body.variable
-    }
-
-    const sql = db.prepare(
-                    `UPDATE Terminales set 
-                       name = COALESCE(@name,name), 
-                       lat = COALESCE(@lat,lat), 
-                       lng = COALESCE(@lng,lng), 
-                       alias = COALESCE(@alias,alias), 
-                       variable = COALESCE(@variable,variable)
-                       WHERE id = @id`).run(data)
-
-    console.log(sql)
-
-    res.json({
-      message: 'success',
-      ...data
+      ...rows[0]
     })
   } catch (error) {
     console.log(error)
@@ -601,20 +516,20 @@ app.put('/api/Terminales/:id', (req, res, next) => {
   }
 })
 
-app.delete('/api/Terminales/:id', (req, res, next) => {
+app.delete('/api/Terminales/:id', async (req, res, next) => {
   try {
-    const sql = db.prepare('DELETE FROM Terminales WHERE id = ?')
-    const info = sql.run(req.params.id)
+    const sql = 'DELETE FROM Terminales WHERE id = ? RETURNING *'
+    const { rows } = await db.query(sql, [req.params.id])
 
-    res.json({ message: 'deleted', data: info })
+    res.json({ message: 'deleted', data: rows[0] })
   } catch (error) {
     console.log(error)
     res.status(400).json({ error: error.message })
   }
 })
 
-/** ******* AUTH *********/
-app.get('/api/Login', (req, res, next) => {
+//* * ******* AUTH *********
+app.get('/api/Login', async (req, res, next) => {
   try {
     const errors = []
     if (!req.query.email) {
@@ -630,14 +545,19 @@ app.get('/api/Login', (req, res, next) => {
     let data = null
     let isPowerUser = 1
 
-    data = db.prepare('SELECT * FROM Admin WHERE email = ? AND password = ?').get([req.query.email, md5('' + req.query.password)])
+    const { rows } = await db.query('SELECT * FROM Admin WHERE email = $1 AND password = $2', [req.query.email, md5('' + req.query.password)])
+    data = rows[0]
+
+    console.log(rows)
+    console.log(data)
 
     if (!data || !data?.id) {
-      data = db.prepare('SELECT * FROM Users WHERE email = ? AND password = ?').get([req.query.email, md5('' + req.query.password)])
+      const { rows: user } = await db.query('SELECT * FROM Users WHERE email = $1 AND password = $2', [req.query.email, md5('' + req.query.password)])
       isPowerUser = 0
+      data = user[0]
     }
 
-    console.log(data)
+    console.log('final', data)
 
     res.json({
       message: 'success',
@@ -649,16 +569,16 @@ app.get('/api/Login', (req, res, next) => {
   }
 })
 
-/** **** ENDPOINTS CLIENTES WEB *******/
+//* * **** ENDPOINTS CLIENTES WEB *******
 
-app.get('/api/getClientContactos', (req, res, next) => {
+app.get('/api/getClientContactos', async (req, res, next) => {
   try {
     if (!req.query.id) {
       res.status(400).json({ error: 'No id' })
       return
     }
 
-    const data = db.prepare('SELECT * FROM Contactos WHERE clientId = ?').all(req.query.id)
+    const { rows: data } = await db.query('SELECT * FROM Contactos WHERE clientid = $1', [req.query.id])
 
     res.json({
       message: 'success',
@@ -670,13 +590,13 @@ app.get('/api/getClientContactos', (req, res, next) => {
   }
 })
 
-app.post('/api/Contactos', (req, res, next) => {
+app.post('/api/Contactos', async (req, res, next) => {
   const errors = []
   if (!req.body.phone) {
     errors.push('No phone specified')
   }
-  if (!req.body.clientId) {
-    errors.push('No clientId specified')
+  if (!req.body.clientid) {
+    errors.push('No clientid specified')
   }
   if (!req.body.name) {
     errors.push('No name specified')
@@ -685,21 +605,23 @@ app.post('/api/Contactos', (req, res, next) => {
     res.status(400).json({ error: errors.join(',') })
     return
   }
-  const data = {
-    clientId: '' + req.body.clientId,
-    name: req.body.name,
-    phone: req.body.phone,
-    position: req.body.position ?? '',
-    note: req.body.note ?? '',
-    active: '' + 1
-  }
+  const {
+    clientid,
+    name,
+    phone
+  } = req.body
+
+  const position = req.body.position ?? ''
+  const note = req.body.note ?? ''
+  const active = req.body.active ?? '' + 1
   try {
-    const params = [data.clientId, data.phone, data.name, data.position, data.active, data.note]
-    db.prepare('INSERT INTO Contactos (clientId,phone,name,position,active,note) VALUES (?,?,?,?,?,?)').run(params)
+    const params = [clientid, phone, name, position, active, note]
+    const sql = 'INSERT INTO Contactos (clientid,phone,name,position,active,note) VALUES ($1,$2,$1,$4,$5,$6)  RETURNING *'
+    const { rows: data } = await db.query(sql, params)
 
     res.json({
       message: 'success',
-      ...data,
+      ...data[0],
       id: this.lastID
     })
   } catch (error) {
@@ -709,45 +631,25 @@ app.post('/api/Contactos', (req, res, next) => {
   }
 })
 
-app.delete('/api/Contactos/:id', (req, res, next) => {
+app.delete('/api/Contactos/:id', async (req, res, next) => {
   try {
-    const sql = db.prepare('DELETE FROM Contactos WHERE id = ?')
-    const info = sql.run(req.params.id)
+    const { rows } = await db.query('DELETE FROM Contactos WHERE id = $1 RETURNING *', [req.params.id])
 
-    res.json({ message: 'deleted', data: info })
+    res.json({ message: 'deleted', data: rows })
   } catch (error) {
     console.log(error)
     res.status(400).json({ error: error.message })
   }
 })
 
-app.get('/api/getClientUser', (req, res, next) => {
-  try {
-    if (!req.query.id) {
-      res.status(400).json({ error: 'No id' })
-      return
-    }
-
-    const data = db.prepare('SELECT * FROM Users WHERE clientId = ?').all(req.query.id)
-
-    res.json({
-      message: 'success',
-      data
-    })
-  } catch (error) {
-    console.log(error)
-    res.status(400).json({ error: error.message })
-  }
-})
-
-app.get('/api/getClientTerminalesAllCli', (req, res, next) => {
+app.get('/api/getClientUser', async (req, res, next) => {
   try {
     if (!req.query.id) {
       res.status(400).json({ error: 'No id' })
       return
     }
 
-    const data = db.prepare('SELECT t.*, tc.clientId, tc.id AS assignId FROM TerminalesClientes tc JOIN Terminales t ON tc.terminalId = t.id WHERE tc.clientId = ?').all(req.query.id)
+    const { rows: data } = await db.query('SELECT * FROM Users WHERE clientid = $1', [req.query.id])
 
     res.json({
       message: 'success',
@@ -759,9 +661,14 @@ app.get('/api/getClientTerminalesAllCli', (req, res, next) => {
   }
 })
 
-app.get('/api/getAsigment', (req, res, next) => {
+app.get('/api/getClientTerminalesAllCli', async (req, res, next) => {
   try {
-    const data = db.prepare('SELECT t.*, c.email, c.name AS clientName, u.email AS fullName, tc.id AS assignId, tu.id AS assignUserId, tc.clientId AS clientId FROM TerminalesClientes tc JOIN Terminales t ON tc.terminalId = t.id JOIN Clientes c ON tc.clientId = c.id JOIN TerminalesUsers tu ON tc.id = tu.assignId JOIN Users u ON tu.userId = u.id').all()
+    if (!req.query.id) {
+      res.status(400).json({ error: 'No id' })
+      return
+    }
+
+    const { rows: data } = await db.query('SELECT t.*, tc.clientid, tc.id AS assignid FROM TerminalesClientes tc JOIN Terminales t ON tc.terminalId = t.id WHERE tc.clientid = $1', [req.query.id])
 
     res.json({
       message: 'success',
@@ -773,14 +680,28 @@ app.get('/api/getAsigment', (req, res, next) => {
   }
 })
 
-app.get('/api/getAsigmentUser', (req, res, next) => {
+app.get('/api/getAsigment', async (req, res, next) => {
+  try {
+    const { rows: data } = await db.query('SELECT t.*, c.email, c.name AS clientName, u.email AS fullName, tc.id AS assignid, tu.id AS assignuserid, tc.clientid AS clientid FROM TerminalesClientes tc JOIN Terminales t ON tc.terminalId = t.id JOIN Clientes c ON tc.clientid = c.id JOIN TerminalesUsers tu ON tc.id = tu.assignid JOIN Users u ON tu.userId = u.id')
+
+    res.json({
+      message: 'success',
+      data
+    })
+  } catch (error) {
+    console.log(error)
+    res.status(400).json({ error: error.message })
+  }
+})
+
+app.get('/api/getAsigmentUser', async (req, res, next) => {
   try {
     if (!req.query.UserId) {
       res.status(400).json({ error: 'No UserId' })
       return
     }
 
-    const data = db.prepare('SELECT t.*, c.email, c.name AS clientName, u.email AS fullName, tc.clientId, tc.id AS assignId, tu.id AS assignUserId FROM TerminalesUsers tu JOIN TerminalesClientes tc ON tu.assignId = tc.id JOIN Terminales t ON tc.terminalId = t.id JOIN Clientes c ON tc.clientId = c.id JOIN Users u ON tu.userId = u.id WHERE tu.userId = ?').all(req.query.UserId)
+    const { rows: data } = await db.query('SELECT t.*, c.email, c.name AS clientName, u.email AS fullName, tc.clientid, tc.id AS assignid, tu.id AS assignuserid FROM TerminalesUsers tu JOIN TerminalesClientes tc ON tu.assignid = tc.id JOIN Terminales t ON tc.terminalId = t.id JOIN Clientes c ON tc.clientid = c.id JOIN Users u ON tu.userId = u.id WHERE tu.userId = $1', [req.query.UserId])
 
     res.json({
       message: 'success',
@@ -792,14 +713,13 @@ app.get('/api/getAsigmentUser', (req, res, next) => {
   }
 })
 
-app.delete('/api/Assigns/:id', (req, res, next) => {
+app.delete('/api/Assigns/:id', async (req, res, next) => {
   try {
-    const sql = db.prepare('DELETE FROM TerminalesUsers WHERE id = ?')
-    const info = sql.run(req.params.id)
+    const { rows } = await db.query('DELETE FROM TerminalesUsers WHERE id = $1 RETURNING *', [req.params.id])
 
     res.json({
       message: 'success',
-      ...info,
+      ...rows[0],
       id: this.lastID
     })
   } catch (error) {
@@ -809,9 +729,9 @@ app.delete('/api/Assigns/:id', (req, res, next) => {
   }
 })
 
-app.get('/api/TerminalNotAsigment', (req, res, next) => {
+app.get('/api/TerminalNotAsigment', async (req, res, next) => {
   try {
-    const data = db.prepare('SELECT * FROM Terminales WHERE id NOT IN (SELECT terminalId FROM TerminalesClientes)').all()
+    const { rows: data } = await db.query('SELECT * FROM Terminales WHERE id NOT IN (SELECT terminalId FROM TerminalesClientes)')
 
     res.json({
       message: 'success',
@@ -823,15 +743,15 @@ app.get('/api/TerminalNotAsigment', (req, res, next) => {
   }
 })
 
-app.post('/api/Client_TerminalAll', (req, res, next) => {
+app.post('/api/Client_TerminalAll', async (req, res, next) => {
   const errors = []
   if (!Array.isArray(req.body)) {
     errors.push('No terminals specified')
   } else {
     let allHasData = true
     req.body.forEach(el => {
-      const { terminalId, clientId } = el
-      if (!terminalId || !clientId) {
+      const { terminalId, clientid } = el
+      if (!terminalId || !clientid) {
         allHasData = false
       }
     })
@@ -842,12 +762,14 @@ app.post('/api/Client_TerminalAll', (req, res, next) => {
     return
   }
   try {
-    const sql = db.prepare('INSERT INTO TerminalesClientes (clientId,terminalId) VALUES (@clientId,@terminalId)')
-    const stm = db.transaction((terminales) => {
-      for (const terminal of terminales) sql.run(terminal)
-    })
+    const sql = 'INSERT INTO TerminalesClientes (clientid,terminalId) VALUES ($1,$2)'
 
-    stm(req.body)
+    const terminales = req.body
+
+    for (let i = 0; i < terminales.length; i++) {
+      const { clientid, terminalId } = terminales[i]
+      await db.query(sql, [clientid, terminalId])
+    }
 
     res.json({
       message: 'success'
@@ -859,14 +781,13 @@ app.post('/api/Client_TerminalAll', (req, res, next) => {
   }
 })
 
-app.delete('/api/ClientTerminals/:id', (req, res, next) => {
+app.delete('/api/ClientTerminals/:id', async (req, res, next) => {
   try {
-    const sql = db.prepare('DELETE FROM TerminalesClientes WHERE id = ?')
-    const info = sql.run(req.params.id)
+    const { rows } = await db.query('DELETE FROM TerminalesClientes WHERE id = $1 RETURNING *', [req.params.id])
 
     res.json({
       message: 'success',
-      ...info,
+      ...rows[0],
       id: this.lastID
     })
   } catch (error) {
@@ -876,15 +797,15 @@ app.delete('/api/ClientTerminals/:id', (req, res, next) => {
   }
 })
 
-app.post('/api/AssignsALL', (req, res, next) => {
+app.post('/api/AssignsALL', async (req, res, next) => {
   const errors = []
   if (!Array.isArray(req.body)) {
     errors.push('No info specified')
   } else {
     let allHasData = true
     req.body.forEach(el => {
-      const { terminalId, clientId, userId } = el
-      if (!terminalId || !clientId || !userId) {
+      const { terminalId, clientid, userId } = el
+      if (!terminalId || !clientid || !userId) {
         allHasData = false
       }
     })
@@ -895,22 +816,19 @@ app.post('/api/AssignsALL', (req, res, next) => {
     return
   }
   try {
-    // db.prepare('INSERT INTO TerminalesUsers (userId,assignId) VALUES (@userId,@assignId)')
-    const sql = db.prepare('SELECT id FROM TerminalesClientes WHERE terminalId = @terminalId AND clientId = @clientId')
-    const stm = db.transaction((info) => {
-      for (const link of info) {
-        const { userId } = link
-        const { id } = sql.get(link)
-        const insert = db.prepare('INSERT INTO TerminalesUsers (userId,assignId) VALUES (?,?)')
-        try {
-          const stmInsert = db.transaction(() => {
-            insert.run([userId, id])
-          })
-          stmInsert()
-        } catch (error) {}
-      }
-    })
-    stm(req.body)
+    const assign = req.body
+
+    const sql = 'SELECT id FROM TerminalesClientes WHERE terminalId = $1 AND clientid = $2'
+
+    for (let i = 0; i < assign.length; i++) {
+      const { userId, terminalId, clientid } = assign[i]
+
+      const { rows } = await db.query(sql, [terminalId, clientid])
+      const { id } = rows[0]
+      try {
+        await db.query('INSERT INTO TerminalesUsers (userId,assignid) VALUES ($1,$2) RETURNING *', [userId, id])
+      } catch (error) {}
+    }
 
     res.json({
       message: 'success',
@@ -924,10 +842,10 @@ app.post('/api/AssignsALL', (req, res, next) => {
 })
 
 // EXTRA DE MOMENTO
-app.post('/api/TerminalesClientes', (req, res, next) => {
+app.post('/api/TerminalesClientes', async (req, res, next) => {
   const errors = []
-  if (!req.body.clientId) {
-    errors.push('No clientId specified')
+  if (!req.body.clientid) {
+    errors.push('No clientid specified')
   }
   if (!req.body.terminalId) {
     errors.push('No terminalId specified')
@@ -936,16 +854,14 @@ app.post('/api/TerminalesClientes', (req, res, next) => {
     res.status(400).json({ error: errors.join(',') })
     return
   }
-  const data = {
-    clientId: '' + req.body.clientId,
-    terminalId: '' + req.body.terminalId
-  }
   try {
-    db.prepare('INSERT INTO TerminalesClientes (clientId,terminalId) VALUES (@clientId,@terminalId)').run(data)
+    const sql = 'INSERT INTO TerminalesClientes (clientid,terminalId) VALUES ($1,$2) RETURNING *'
+
+    const { rows } = await db.query(sql, ['' + req.body.clientid, '' + req.body.terminalId])
 
     res.json({
       message: 'success',
-      ...data,
+      ...rows[0],
       id: this.lastID
     })
   } catch (error) {
@@ -955,10 +871,9 @@ app.post('/api/TerminalesClientes', (req, res, next) => {
   }
 })
 
-app.get('/api/Assigns', (req, res, next) => {
+app.get('/api/Assigns', async (req, res, next) => {
   try {
-    const sql = db.prepare('SELECT * FROM TerminalesUsers')
-    const info = sql.all()
+    const { rows: info } = await db.query('SELECT * FROM TerminalesUsers')
 
     res.json({
       message: 'success',
