@@ -13,17 +13,14 @@ app.use(cors())
 app.use(bodyParser.urlencoded({ extended: false }))
 app.use(bodyParser.json())
 
-// Server port
-const HTTP_PORT = 8000
-
 // Root endpoint
 app.get('/', (req, res, next) => {
   res.json({ message: 'Ok' })
 })
 
 // Start server
-app.listen(HTTP_PORT, () => {
-  console.log('Server running on port %PORT%'.replace('%PORT%', HTTP_PORT))
+app.listen(process.env.PORT, () => {
+  console.log('Server running on port %PORT%'.replace('%PORT%', process.env.PORT))
 })
 
 // ENDPOINTS PARA CLIENTES
@@ -605,9 +602,6 @@ app.post('/api/Contactos', async (req, res, next) => {
     name,
     phone
   } = req.body
-
-  console.log(clientid)
-  console.log(Number(clientid))
 
   const position = req.body.position ?? ''
   const note = req.body.note ?? ''
