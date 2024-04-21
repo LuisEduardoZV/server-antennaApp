@@ -548,16 +548,11 @@ app.get('/api/Login', async (req, res, next) => {
     const { rows } = await db.query('SELECT * FROM Admin WHERE email = $1 AND password = $2', [req.query.email, md5('' + req.query.password)])
     data = rows[0]
 
-    console.log(rows)
-    console.log(data)
-
     if (!data || !data?.id) {
       const { rows: user } = await db.query('SELECT * FROM Users WHERE email = $1 AND password = $2', [req.query.email, md5('' + req.query.password)])
       isPowerUser = 0
       data = user[0]
     }
-
-    console.log('final', data)
 
     res.json({
       message: 'success',
@@ -611,12 +606,15 @@ app.post('/api/Contactos', async (req, res, next) => {
     phone
   } = req.body
 
+  console.log(clientid)
+  console.log(Number(clientid))
+
   const position = req.body.position ?? ''
   const note = req.body.note ?? ''
   const active = req.body.active ?? '' + 1
   try {
     const params = [clientid, phone, name, position, active, note]
-    const sql = 'INSERT INTO Contactos (clientid,phone,name,position,active,note) VALUES ($1,$2,$1,$4,$5,$6)  RETURNING *'
+    const sql = 'INSERT INTO Contactos (clientid,phone,name,position,active,note) VALUES ($1,$2,$3,$4,$5,$6) RETURNING *'
     const { rows: data } = await db.query(sql, params)
 
     res.json({
